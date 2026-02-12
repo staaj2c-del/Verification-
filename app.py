@@ -1,6 +1,7 @@
-from flask import Flask, render_template, request, redirect
+from flask import Flask, render_template, request
 import os, json, requests
 from datetime import datetime
+from urllib.parse import urlencode
 
 app = Flask(__name__)
 DATA_FILE = "../data/verified.json"
@@ -29,7 +30,16 @@ def verify():
     discord_id = request.args.get("discord_id")
     if not discord_id:
         return "Missing Discord ID", 400
-    return render_template("index.html", discord_id=discord_id)
+
+    params = {
+        "client_id": CLIENT_ID,
+        "redirect_uri": REDIRECT_URI,
+        "response_type": "code",
+        "scope": "identify",
+        "state": discord_id
+    }
+    oauth_url = f"https://discord.com/api/oauth2/authorize?{urlencode(params)}"
+    return render_template("verify.html", oauth_url=oauth_url)
 
 @app.route("/callback")
 def callback():
@@ -52,12 +62,18 @@ def callback():
         access_token = token_res.get("access_token")
         if not access_token:
             return "OAuth failed", 400
-        user_res = requests.get("https://discord.com/api/users/@me", headers={"Authorization": f"Bearer {access_token}"}).json()
+
+        user_res = requests.get(
+            "https://discord.com/api/users/@me",
+            headers={"Authorization": f"Bearer {access_token}"}
+        ).json()
         verified_id = user_res.get("id")
         if verified_id != discord_id:
             return "Discord ID mismatch!", 400
+
         ip = request.headers.get("X-Forwarded-For", request.remote_addr)
         save_verification(discord_id, ip)
+
         return "<h2>✅ Verification Complete! You can close this page.</h2>"
     except Exception as e:
         print("Callback error:", e)
